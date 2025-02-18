@@ -353,5 +353,3 @@ plt.legend()
 plt.show()
 
 
-
-#ao inves de mse vamos usar o algoritmo de gradiente descendente para escolher o delta
