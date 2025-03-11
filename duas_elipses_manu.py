@@ -175,81 +175,82 @@ def calculate_r2(x, y):
 
 #                          Main Functions
 # Optimizing delta
-def objective(delta, verbose=False):
+def optimize_delta(deltas, length, theta, sin_theta, curvature_loss_exp, TNB_Flat, error_function, desired_slope):
 
-    totalLoss1 = []
-    totalLoss2 = []
-    two_a_value = []
-    a1_value = []
-    a2_value = []
-    e2_value = []
-    b1_value = []
-    b2_value = []
-    
-    for eccentricity in np.linspace(0, 0.95, 500):
-
-        elliptic_integral = ellipe(eccentricity**2)
-        a1, b1 = calculate_a_b(length, elliptic_integral, eccentricity)
-        a2 = ((2 * b1) + delta) / 2
-        two_a2 = 2 * a2
-
-        # Choosing range for two_a2
-        if (two_a2 < 0.05 or two_a2 > 0.052):
-            continue
-
-        # Finding the eccentricity of the second ellipse 
-        function_Ee = length / (4 * a2)
+    best_delta = None
+    min_combined_metric = float('inf')
+    for delta in deltas:
+        totalLoss1 = []
+        totalLoss2 = []
+        two_a_value = []
+        a1_value = []
+        a2_value = []
+        e2_value = []
+        b1_value = []
+        b2_value = []
         
-        if (function_Ee < 1 or function_Ee > np.pi / 2):
-            break
-        
-        try:
+        for eccentricity in np.linspace(0, 0.95, 500):
+
+            elliptic_integral = ellipe(eccentricity**2)
+            a1, b1 = calculate_a_b(length, elliptic_integral, eccentricity)
+            a2 = ((2 * b1) + delta) / 2
+            two_a2 = 2 * a2
+
+            # Choosing range for two_a2
+            if (two_a2 < 0.05 or two_a2 > 0.052):
+                continue
+
+            # Finding the eccentricity of the second ellipse 
+            function_Ee = length / (4 * a2)
+            
+            if (function_Ee < 1 or function_Ee > np.pi / 2):
+                # print(eccentricity)
+                # print(function_Ee)
+                # print()
+                break
+            
+            # print(a1,b1)
             e2 = calculate_eccentricity(error_function, function_Ee)
-        except Exception:
-            continue        
 
-        b2 = a2 * (np.sqrt(1 - (e2 ** 2)))
+            b2 = a2 * (np.sqrt(1 - (e2 ** 2)))
 
-        # Generate ellipses
-        t = np.linspace(0, 2 * np.pi, 500)
-        x1, y1 = ellipse(a1, b1, t)
-        x2, y2 = ellipse(a2, b2, t)
+            # Generate ellipses
+            t = np.linspace(0, 2 * np.pi, 500)
+            x1, y1 = ellipse(a1, b1, t)
+            x2, y2 = ellipse(a2, b2, t)
 
-        kappa1, loss1, _ = calculate_curvature_and_loss(x1, y1, TNB_Flat, curvature_loss_exp)
-        kappa2, loss2, _ = calculate_curvature_and_loss(x2, y2, TNB_Flat, curvature_loss_exp)
+            kappa1, loss1, _ = calculate_curvature_and_loss(x1, y1, TNB_Flat, curvature_loss_exp)
+            kappa2, loss2, _ = calculate_curvature_and_loss(x2, y2, TNB_Flat, curvature_loss_exp)
 
-        # Verify the value of the radius
-        if any([(1/np.max(kappa1)) < 0.00237, (1/np.max(kappa2)) < 0.00237]):
-            continue 
+            # Verify the value of the radius
+            if any([(1/np.max(kappa1)) < 0.00237, (1/np.max(kappa2)) < 0.00237]):
+                continue 
 
-        a1_value.append(a1)
-        a2_value.append(a2)
-        b1_value.append(b1)
-        b2_value.append(b2)
-        totalLoss1.append(loss1)
-        totalLoss2.append(loss2)
-        two_a_value.append(two_a2)
-        e2_value.append(e2)
+            a1_value.append(a1)
+            a2_value.append(a2)
+            b1_value.append(b1)
+            b2_value.append(b2)
+            totalLoss1.append(loss1)
+            totalLoss2.append(loss2)
+            two_a_value.append(two_a2)
+            e2_value.append(e2)
 
-    if (len(two_a_value) == 0 or len (totalLoss_sum)) == 0:
-        return None, None, None, None, None, None, None, None, None, None
+        totalLoss_sum = np.array(totalLoss1) + np.array(totalLoss2)
+        two_a_value = np.array(two_a_value)
 
-    totalLoss_sum = np.array(totalLoss1) + np.array(totalLoss2)
-    two_a_value = np.array(two_a_value)
-
-    if (len(two_a_value) != 0 and len(totalLoss_sum) != 0):
-    # Compute the MSE between the sum of curvature losses and a straight line fit
-        mse, slope_difference, calculated_slope, calculated_intercept = fit_and_evaluate_losses(
-            two_a_value, totalLoss_sum, desired_slope
-        )
-        slopes.append(calculated_slope)
+        if (len(two_a_value) != 0 and len(totalLoss_sum) != 0):
+        # Compute the MSE between the sum of curvature losses and a straight line fit
+            mse, slope_difference, calculated_slope, calculated_intercept = fit_and_evaluate_losses(
+                two_a_value, totalLoss_sum, desired_slope
+            )
+            slopes.append(calculated_slope)
 
 
-    # Check if the current delta gives a better fit
-        combined_metric = mse + 1000 * slope_difference 
-        if combined_metric < min_combined_metric:
-            min_combined_metric = combined_metric
-            best_delta = delta
+        # Check if the current delta gives a better fit
+            combined_metric = mse + 1000 * slope_difference 
+            if combined_metric < min_combined_metric:
+                min_combined_metric = combined_metric
+                best_delta = delta
 
     return best_delta, two_a_value, totalLoss_sum, calculated_slope, calculated_intercept, a1_value, b1_value, a2_value, b2_value, e2_value
 
@@ -351,5 +352,3 @@ ax1.tick_params(axis='both',
                 which='major')
 plt.legend()
 plt.show()
-
-
