@@ -21,7 +21,12 @@ sin_theta = np.sin(theta)
 desired_slope = 90
 slopes = []
 weight = 1000
-
+initial_delta = 0.015        
+learning_rate = 0.0001        
+epsilon = 0.0001              
+num_iterations = 100          
+min_delta = 0.00001           
+max_delta = 0.021             
 
 #==========================================================================
 
@@ -175,154 +180,236 @@ def calculate_r2(x, y):
 
 #                          Main Functions
 # Optimizing delta
-def optimize_delta(deltas, length, theta, sin_theta, curvature_loss_exp, TNB_Flat, error_function, desired_slope):
+def compute_combined_metric(delta, length, theta, sin_theta, curvature_loss_exp, 
+                           TNB_Flat, error_function, desired_slope):
+    totalLoss1 = []
+    totalLoss2 = []
+    two_a_value = []
+    a1_value = []
+    a2_value = []
+    e2_value = []
+    b1_value = []
+    b2_value = []    
 
-    best_delta = None
-    min_combined_metric = float('inf')
-    for delta in deltas:
-        totalLoss1 = []
-        totalLoss2 = []
-        two_a_value = []
-        a1_value = []
-        a2_value = []
-        e2_value = []
-        b1_value = []
-        b2_value = []
+    for eccentricity in np.linspace(0, 0.95, 100):
+        elliptic_integral = ellipe(eccentricity**2)
+        a1, b1 = calculate_a_b(length, elliptic_integral, eccentricity)
+
+        a2 = ((2 * b1) + delta) / 2
+        two_a2 = 2 * a2
+
+        # Choosing range for two_a2
+        if (two_a2 < 0.05 or two_a2 > 0.052):
+            continue
+
+        # Finding the eccentricity of the second ellipse 
+        function_Ee = length / (4 * a2)
         
-        for eccentricity in np.linspace(0, 0.95, 500):
+        if (function_Ee < 1 or function_Ee > np.pi / 2):
+            # print(eccentricity)
+            # print(function_Ee)
+            # print()
+            continue
 
-            elliptic_integral = ellipe(eccentricity**2)
-            a1, b1 = calculate_a_b(length, elliptic_integral, eccentricity)
-            a2 = ((2 * b1) + delta) / 2
-            two_a2 = 2 * a2
+        e2 = calculate_eccentricity(error_function, function_Ee)
 
-            # Choosing range for two_a2
-            if (two_a2 < 0.05 or two_a2 > 0.052):
-                continue
+        b2 = a2 * (np.sqrt(1 - (e2 ** 2)))
 
-            # Finding the eccentricity of the second ellipse 
-            function_Ee = length / (4 * a2)
-            
-            if (function_Ee < 1 or function_Ee > np.pi / 2):
-                # print(eccentricity)
-                # print(function_Ee)
-                # print()
-                break
-            
-            # print(a1,b1)
-            e2 = calculate_eccentricity(error_function, function_Ee)
+        # Generate ellipses
+        t = np.linspace(0, 2 * np.pi, 500)
+        x1, y1 = ellipse(a1, b1, t)
+        x2, y2 = ellipse(a2, b2, t)
 
-            b2 = a2 * (np.sqrt(1 - (e2 ** 2)))
+        kappa1, loss1, _ = calculate_curvature_and_loss(x1, y1, TNB_Flat, curvature_loss_exp)
+        kappa2, loss2, _ = calculate_curvature_and_loss(x2, y2, TNB_Flat, curvature_loss_exp)
 
-            # Generate ellipses
-            t = np.linspace(0, 2 * np.pi, 500)
-            x1, y1 = ellipse(a1, b1, t)
-            x2, y2 = ellipse(a2, b2, t)
+        # Verify the value of the radius
+        if any([(1/np.max(kappa1)) < 0.00237, (1/np.max(kappa2)) < 0.00237]):
+            continue 
 
-            kappa1, loss1, _ = calculate_curvature_and_loss(x1, y1, TNB_Flat, curvature_loss_exp)
-            kappa2, loss2, _ = calculate_curvature_and_loss(x2, y2, TNB_Flat, curvature_loss_exp)
+        a1_value.append(a1)
+        a2_value.append(a2)
+        b1_value.append(b1)
+        b2_value.append(b2)
+        totalLoss1.append(loss1)
+        totalLoss2.append(loss2)
+        two_a_value.append(two_a2)
+        e2_value.append(e2)
 
-            # Verify the value of the radius
-            if any([(1/np.max(kappa1)) < 0.00237, (1/np.max(kappa2)) < 0.00237]):
-                continue 
+        
+    totalLoss_sum = np.array(totalLoss1) + np.array(totalLoss2)
+    two_a_value = np.array(two_a_value)
 
-            a1_value.append(a1)
-            a2_value.append(a2)
-            b1_value.append(b1)
-            b2_value.append(b2)
-            totalLoss1.append(loss1)
-            totalLoss2.append(loss2)
-            two_a_value.append(two_a2)
-            e2_value.append(e2)
+    if len(two_a_value) == 0 or len(totalLoss_sum) == 0:
+        return float('inf')
 
-        totalLoss_sum = np.array(totalLoss1) + np.array(totalLoss2)
-        two_a_value = np.array(two_a_value)
-
-        if (len(two_a_value) != 0 and len(totalLoss_sum) != 0):
-        # Compute the MSE between the sum of curvature losses and a straight line fit
-            mse, slope_difference, calculated_slope, calculated_intercept = fit_and_evaluate_losses(
-                two_a_value, totalLoss_sum, desired_slope
-            )
-            slopes.append(calculated_slope)
+    mse, slope_difference, _, _ = fit_and_evaluate_losses(
+        two_a_value, totalLoss_sum, desired_slope
+    )
+    return mse + weight * slope_difference
 
 
-        # Check if the current delta gives a better fit
-            combined_metric = mse + 1000 * slope_difference 
-            if combined_metric < min_combined_metric:
-                min_combined_metric = combined_metric
-                best_delta = delta
 
-    return best_delta, two_a_value, totalLoss_sum, calculated_slope, calculated_intercept, a1_value, b1_value, a2_value, b2_value, e2_value
 
-# Function to fit a line (linear regression) and plot the final result
-def plot_best_fit_line(x, y):
-    x = x.reshape(-1, 1)
+
+
+
+
+def optimize_delta_gd(initial_delta, learning_rate, num_iterations, epsilon,
+                     length, theta, sin_theta, curvature_loss_exp, TNB_Flat,
+                     error_function, desired_slope):
     
-    model = LinearRegression()
-    model.fit(x, y)
-    y_pred = model.predict(x)
+    """
+    Gradient descent optimization for delta parameter
     
-    # Plot the filtered data
-    fig3, ax3 = plt.subplots(figsize=(13, 8))
-    ax3.plot(x, y, label='Sum of Curvature Losses [dB] (filtered)', color='green', linewidth=2)
+    Optimization Strategy:
+    1. Uses finite difference gradient estimation
+    2. Maintains delta within physical bounds [min_delta, max_delta]
+    3. Tracks best performing delta through iterations
+    4. Final evaluation with best delta
     
-    # Plotar the fitted line
-    ax3.plot(x, y_pred, label='Fitted line', color='red', linestyle='--', linewidth=2)
-    ax3.set_title('Sum of Curvature Losses vs 2a (With Fitted Line)')
-    ax3.set_xlabel('2a [m]')
-    ax3.set_ylabel('Sum Loss [dB]')
-    ax3.grid(True)
-    ax3.tick_params(axis='both', which='major')
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
+    Parameters:
+    learning_rate : float - Step size for gradient updates
+    epsilon : float - Perturbation size for gradient calculation
+    num_iterations : int - Maximum optimization steps
+    """
     
-    # Slope and intercept
-    print(f"Slope: {model.coef_}")
-    print(f"Intercept: {model.intercept_}")
-    print(f"calculated_slope: {calculated_slope}")
+    # Initialize delta with physical constraints
+    delta = np.clip(initial_delta, min_delta, max_delta)
+    best_delta = delta
+    delta = initial_delta
+    best_metric = float('inf')
+    best_delta = initial_delta
+    history = []
 
+    for _ in range(num_iterations):
 
+        # Bounded parameter perturbations
+        delta_plus = np.clip(delta + epsilon, min_delta, max_delta)
+        delta_minus = np.clip(delta - epsilon, min_delta, max_delta)
 
+        # Calculate finite difference gradient
+        metric_plus = compute_combined_metric(
+            delta_plus, 
+            length, theta, sin_theta, curvature_loss_exp,
+            TNB_Flat, error_function, desired_slope
+        )
+        metric_minus = compute_combined_metric(
+            delta_minus,
+            length, theta, sin_theta, curvature_loss_exp,
+            TNB_Flat, error_function, desired_slope
+        )
+
+        # Handle numerical instability
+        if np.isinf(metric_plus) or np.isinf(metric_minus) or np.isnan(metric_plus) or np.isnan(metric_minus):
+            continue
+
+        # Central difference gradient estimation
+        gradient = (metric_plus - metric_minus) / (2 * epsilon)
+
+        # Update delta with gradient descent
+        delta = np.clip(delta - learning_rate * gradient, min_delta, max_delta)        # Track best performing delta
+        
+        current_metric = compute_combined_metric(
+            delta,
+            length, theta, sin_theta, curvature_loss_exp,
+            TNB_Flat, error_function, desired_slope
+        )
+        
+        if current_metric < best_metric:
+            best_metric = current_metric
+            best_delta = delta
+        
+        history.append(current_metric)
+
+    # Final evaluation with final delta
+    final_totalLoss1 = []
+    final_totalLoss2 = []
+    final_two_a_value = []
+    final_a1_value = []
+    final_a2_value = []
+    final_e2_value = []
+    final_b1_value = []
+    final_b2_value = []
+    final_slope = None
+    final_intercept = None
+
+    for eccentricity in np.linspace(0, 0.95, 100):
+        elliptic_integral = ellipe(eccentricity**2)
+        a1, b1 = calculate_a_b(length, elliptic_integral, eccentricity)
+        a2 = ((2 * b1) + best_delta) / 2
+        two_a2 = 2 * a2
+
+        if (two_a2 < 0.05 or two_a2 > 0.052):
+            continue
+
+        function_Ee = length / (4 * a2)
+        if (function_Ee < 1 or function_Ee > np.pi / 2):
+            break
+
+        e2 = calculate_eccentricity(error_function, function_Ee)
+        b2 = a2 * (np.sqrt(1 - (e2 ** 2)))
+
+        # Generate ellipses and calculate curvature/loss
+        t = np.linspace(0, 2 * np.pi, 500)
+        x1, y1 = ellipse(a1, b1, t)
+        x2, y2 = ellipse(a2, b2, t)
+
+        kappa1, loss1, _ = calculate_curvature_and_loss(x1, y1, TNB_Flat, curvature_loss_exp)
+        kappa2, loss2, _ = calculate_curvature_and_loss(x2, y2, TNB_Flat, curvature_loss_exp)
+
+        if any([(1/np.max(kappa1)) < 0.00237, (1/np.max(kappa2)) < 0.00237]):
+            continue
+
+        # Store values in final arrays
+        final_a1_value.append(a1)
+        final_a2_value.append(a2)
+        final_b1_value.append(b1)
+        final_b2_value.append(b2)
+        final_totalLoss1.append(loss1)
+        final_totalLoss2.append(loss2)
+        final_two_a_value.append(two_a2)
+        final_e2_value.append(e2)
+
+    # Calculate final metrics
+    final_totalLoss_sum = np.array(final_totalLoss1) + np.array(final_totalLoss2)
+    final_two_a_value = np.array(final_two_a_value)
+    
+    if len(final_two_a_value) > 0:
+        final_mse, final_slope_diff, final_slope, final_intercept = fit_and_evaluate_losses(
+            final_two_a_value, final_totalLoss_sum, desired_slope
+        )
+
+    return (best_delta, final_two_a_value, final_totalLoss_sum, 
+            final_slope, final_intercept, final_a1_value, final_b1_value,
+            final_a2_value, final_b2_value, final_e2_value)
 #==========================================================================
 #
 #                       Calculating the two ellipses
 
-best_delta, two_a_value, totalLoss_sum, calculated_slope, calculated_intercept, a1, b1, a2, b2, e2  = optimize_delta(deltas, length, theta, sin_theta, curvature_loss_exp, TNB_Flat, error_function, desired_slope)
+best_delta, final_two_a_value, final_totalLoss_sum, final_slope, final_intercept, a1, b1, a2, b2, e2 = optimize_delta_gd (initial_delta, learning_rate, num_iterations, epsilon, length, theta, sin_theta, curvature_loss_exp, TNB_Flat, error_function, desired_slope)
 
-# Calculate the line with the optimized delta
-calculated_slope = float(calculated_slope[0])  
-calculated_intercept = float(calculated_intercept[0])  
-line_values = calculated_slope * two_a_value + calculated_intercept
+# #==========================================================================
+# #
+# #                               Results
 
-
-
-#==========================================================================
-#
-#                               Results
-
-print(f"slope:",calculated_slope)
 # The best delta
 print(f"The best delta is {best_delta}")
 
 # Applying the metric
-print(len(two_a_value), len(totalLoss_sum))
-r2 = calculate_r2(two_a_value, totalLoss_sum)
+print(len(final_two_a_value), len(final_totalLoss_sum))
+r2 = calculate_r2(final_two_a_value, final_totalLoss_sum)
 print(f"R²: {r2}")
 
-# Criar o gráfico
+# Plot a1, a2, b1, b2 and e2
 plt.figure(figsize=(10, 6))
-
-# Plotar as listas
 plt.plot(e2, a1, label="a1", marker="o")
 plt.plot(e2, a2, label="a2", marker="s")
 plt.plot(e2, b1, label="b1", marker="^")
 plt.plot(e2, b2, label="b2", marker="d")
-
-# Personalizações
-plt.xlabel("Excentricidade da segunda elipse")
-plt.ylabel("Valores de a e b")
-plt.title("Comportamento de a e b")
+plt.xlabel("Eccentricity of the second ellipse")
+plt.ylabel("Values of a and b")
+plt.title("Behavior of a and b")
 plt.legend()
 plt.grid(True, linestyle="--", alpha=0.6)
 plt.tight_layout()
@@ -330,19 +417,11 @@ plt.tight_layout()
 # Plot 2a vs sum of total losses
 fig1, ax1 = plt.subplots(figsize=(13, 8))
 ax1.plot(
-    two_a_value, 
-    totalLoss_sum, 
+    final_two_a_value, 
+    final_totalLoss_sum, 
     label=f'Sum of Curvature Losses [dB] (optimized delta = {best_delta})', 
     color='blue',
     linewidth=2)
-ax1.plot(
-    two_a_value,
-    line_values,
-    label=f'Fitted Line (slope={calculated_slope:.2f}, intercept={calculated_intercept:.2f})',
-    color='red',
-    linestyle='--',
-    linewidth=2
-)
 ax1.set_title('Sum of Curvature Losses vs 2a (Optimized)')
 ax1.set_xlabel('2a [m]')
 ax1.set_ylabel('Sum Loss [dB]')
