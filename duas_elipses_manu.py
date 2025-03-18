@@ -20,20 +20,18 @@ theta = np.linspace(0, np.pi/2, 10000)
 sin_theta = np.sin(theta)
 desired_slope = 90
 slopes = []
-weight = 1000
-initial_delta = 0.015        
-learning_rate = 0.0001        
-epsilon = 0.0001              
-num_iterations = 100          
+weight = 10
+initial_delta = 0.017        
+learning_rate = 0.001        
+epsilon = 0.00001              
+num_iterations = 1000          
 min_delta = 0.00001           
-max_delta = 0.021             
+max_delta = 0.032           
 
 #==========================================================================
 
 #                          Helper Functions
 
-# Compute Frenet-Serret frame from three arrays of data, (x,y and z)
-# Method to compute the curvature
 def TNB_Flat(x, y, t):
     # dr is the differential of the curve
     dr = np.matrix([np.gradient(x), np.gradient(y)])
@@ -98,7 +96,6 @@ def ellipse(a, b, t):
     y = b * np.sin(t + np.pi/2)
     return x, y
 
-# Method to compute the distributed macrobend loss as a function of the curvature radius (1/k)
 def curvature_loss_exp(curvature):
     a1 = 1525.965951223269
     b1 = -869.0646471499498
@@ -117,7 +114,6 @@ def calculate_a_b(length, elliptic_integral, eccentricity):
     a = b / np.sqrt(1 - eccentricity**2)
     return a, b
 
-# Calculate the second eccentricity
 def error_function(e, E):
     return ellipe(e**2) - E
 
@@ -191,16 +187,16 @@ def compute_combined_metric(delta, length, theta, sin_theta, curvature_loss_exp,
     b1_value = []
     b2_value = []    
 
-    for eccentricity in np.linspace(0, 0.95, 100):
+    for eccentricity in np.linspace(0, 0.95, 300):
         elliptic_integral = ellipe(eccentricity**2)
         a1, b1 = calculate_a_b(length, elliptic_integral, eccentricity)
 
         a2 = ((2 * b1) + delta) / 2
         two_a2 = 2 * a2
-
+        
         # Choosing range for two_a2
-        if (two_a2 < 0.05 or two_a2 > 0.052):
-            continue
+        # if (two_a2 < 0.05 or two_a2 > 0.052):
+        #     continue
 
         # Finding the eccentricity of the second ellipse 
         function_Ee = length / (4 * a2)
@@ -209,7 +205,7 @@ def compute_combined_metric(delta, length, theta, sin_theta, curvature_loss_exp,
             # print(eccentricity)
             # print(function_Ee)
             # print()
-            continue
+            break
 
         e2 = calculate_eccentricity(error_function, function_Ee)
 
@@ -224,8 +220,8 @@ def compute_combined_metric(delta, length, theta, sin_theta, curvature_loss_exp,
         kappa2, loss2, _ = calculate_curvature_and_loss(x2, y2, TNB_Flat, curvature_loss_exp)
 
         # Verify the value of the radius
-        if any([(1/np.max(kappa1)) < 0.00237, (1/np.max(kappa2)) < 0.00237]):
-            continue 
+        # if any([(1/np.max(kappa1)) < 0.00237, (1/np.max(kappa2)) < 0.00237]):
+        #     continue 
 
         a1_value.append(a1)
         a2_value.append(a2)
@@ -241,12 +237,21 @@ def compute_combined_metric(delta, length, theta, sin_theta, curvature_loss_exp,
     two_a_value = np.array(two_a_value)
 
     if len(two_a_value) == 0 or len(totalLoss_sum) == 0:
+        print("oi")
         return float('inf')
 
     mse, slope_difference, _, _ = fit_and_evaluate_losses(
         two_a_value, totalLoss_sum, desired_slope
     )
-    return mse + weight * slope_difference
+
+    print("mse: ",mse)
+    print("slope_dif: ", slope_difference)
+    print("delta: ", delta)
+
+    result = mse * weight + slope_difference
+    print (result)
+
+    return result
 
 
 
@@ -277,11 +282,9 @@ def optimize_delta_gd(initial_delta, learning_rate, num_iterations, epsilon,
     # Initialize delta with physical constraints
     delta = np.clip(initial_delta, min_delta, max_delta)
     best_delta = delta
-    delta = initial_delta
     best_metric = float('inf')
-    best_delta = initial_delta
     history = []
-
+    i = 0
     for _ in range(num_iterations):
 
         # Bounded parameter perturbations
@@ -302,6 +305,8 @@ def optimize_delta_gd(initial_delta, learning_rate, num_iterations, epsilon,
 
         # Handle numerical instability
         if np.isinf(metric_plus) or np.isinf(metric_minus) or np.isnan(metric_plus) or np.isnan(metric_minus):
+            #print(i)
+            i = i + 1
             continue
 
         # Central difference gradient estimation
@@ -319,6 +324,7 @@ def optimize_delta_gd(initial_delta, learning_rate, num_iterations, epsilon,
         if current_metric < best_metric:
             best_metric = current_metric
             best_delta = delta
+            print("Best delta: ", best_delta)
         
         history.append(current_metric)
 
@@ -334,14 +340,14 @@ def optimize_delta_gd(initial_delta, learning_rate, num_iterations, epsilon,
     final_slope = None
     final_intercept = None
 
-    for eccentricity in np.linspace(0, 0.95, 100):
+    for eccentricity in np.linspace(0, 0.95, 300):
         elliptic_integral = ellipe(eccentricity**2)
         a1, b1 = calculate_a_b(length, elliptic_integral, eccentricity)
         a2 = ((2 * b1) + best_delta) / 2
         two_a2 = 2 * a2
 
-        if (two_a2 < 0.05 or two_a2 > 0.052):
-            continue
+        # if (two_a2 < 0.05 or two_a2 > 0.052):
+        #     continue
 
         function_Ee = length / (4 * a2)
         if (function_Ee < 1 or function_Ee > np.pi / 2):
@@ -358,8 +364,8 @@ def optimize_delta_gd(initial_delta, learning_rate, num_iterations, epsilon,
         kappa1, loss1, _ = calculate_curvature_and_loss(x1, y1, TNB_Flat, curvature_loss_exp)
         kappa2, loss2, _ = calculate_curvature_and_loss(x2, y2, TNB_Flat, curvature_loss_exp)
 
-        if any([(1/np.max(kappa1)) < 0.00237, (1/np.max(kappa2)) < 0.00237]):
-            continue
+        # if any([(1/np.max(kappa1)) < 0.00237, (1/np.max(kappa2)) < 0.00237]):
+        #     continue
 
         # Store values in final arrays
         final_a1_value.append(a1)
@@ -431,3 +437,20 @@ ax1.tick_params(axis='both',
                 which='major')
 plt.legend()
 plt.show()
+
+
+"""o limite do delta sempre vai ser o melhor delta. por que?
+quanto mais voce aumenta o limite do delta, menos amostras vc tera. quanto menos amostras, mais perto de uma reta vai estar...
+por exemplo, se tiver apenas duas amostras, a distancia entre elas vai ser sempre uma reta, enão vai continuar sendo assim ate que a elipse pare de existir.
+como resolver? talvez colocando um limite minimo de amostras permitidos para analisar quão bem se encaixa numa reta"""
+
+"""e se eu pegasse o que tem mais samples e r2??? 
+ex: The best delta is 0.015
+280 280
+R²: 0.6081005728350152
+The best delta is 0.017
+226 226
+R²: 0.5664841764413471
+
+por que eles escolheria o 0.017 ao inves do 15 se o 15, com mais amostras, se mostrou um fit melhor???
+"""
