@@ -452,25 +452,3 @@ ax1.tick_params(axis='both',
 plt.legend()
 plt.show()
 
-
-"""o limite do delta sempre vai ser o melhor delta. por que?
-quanto mais voce aumenta o limite do delta, menos amostras vc tera. quanto menos amostras, mais perto de uma reta vai estar...
-por exemplo, se tiver apenas duas amostras, a distancia entre elas vai ser sempre uma reta, enão vai continuar sendo assim ate que a elipse pare de existir.
-como resolver? talvez colocando um limite minimo de amostras permitidos para analisar quão bem se encaixa numa reta"""
-
-"""e se eu pegasse o que tem mais samples e r2??? 
-ex: The best delta is 0.015
-280 280
-R²: 0.6081005728350152
-The best delta is 0.017
-226 226
-R²: 0.5664841764413471
-
-por que eles escolheria o 0.017 ao inves do 15 se o 15, com mais amostras, se mostrou um fit melhor???
-"""
-
-"""uma vez retornando infinito, acabou. o delta nunca vai conseguir ser atualizado, pq vai sempre ficar voltando pro mesmo, por isso so
-roda as duas primeiras vezes
-
-sera que teria um jeito de implementar esse tipo de algoritmo, ja que, variando um dado, as vezes a informação referente a ele
-simplesmente n existe? ele precisa da informação anterior pra andar e, se ela nao existe, como faz??"""
