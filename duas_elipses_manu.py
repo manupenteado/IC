@@ -13,20 +13,21 @@ from sklearn.metrics import r2_score
 
 #                Defining constants and parameters
 
-#deltas = np.linspace(0.00001, 0.021, 25)
-initial_radius = (20/2) * 1e-03
-length = 2 * np.pi * initial_radius
+initial_radius_values = np.linspace ((20/2) * 1e-03 - 1e-03, (20/2) * 1e-03 + 1e-03, 10)
+#initial_radius1 = (20/2) * 1e-03
 theta = np.linspace(0, np.pi/2, 1000)
 sin_theta = np.sin(theta)
-desired_slope = 300
+desired_slope = -300
 slopes = []
 weight = 10
 initial_delta = 0.008
-learning_rate = 0.000000001        
+learning_rate = 0.000000001 / 1.2       
 epsilon = 0.00001              
-num_iterations = 100        
+num_iterations = 50  
 min_delta = 0.002           
-max_delta = 0.02      
+max_delta = 0.02
+min_2a = 0.02
+max_2a = 0.023  
 
 #==========================================================================
 
@@ -109,15 +110,6 @@ def curvature_loss_exp(x):
     mu = np.asarray(mu)
  
     return a1 * np.exp(b1 * x) + a2 * np.exp(-((x - mu) ** 2) / (2 * sigma ** 2))
- 
-
-# def curvature_loss_exp(curvature):
-#     a1 = 1525.965951223269
-#     b1 = -869.0646471499498
-#     a2 = 1525.9295489081296
-#     b2 = -869.0650046536391
-
-#     return a1 * np.exp(b1 * (1 / curvature)) + a2 * np.exp(b2 * (1 / curvature))
 
 # Function to compute the elliptic integral
 def calculate_elliptic_integral(eccentricity, sin_theta, theta):
@@ -173,6 +165,7 @@ def fit_and_evaluate_losses(two_a_value, totalLoss_sum, desired_slope):
     model = LinearRegression()
     model.fit(x, y)
     calculated_slope = model.coef_[0]
+    print(calculated_slope)
     calculated_intercept = model.intercept_
     slope_difference = abs(calculated_slope - desired_slope)
 
@@ -204,15 +197,15 @@ def compute_combined_metric(delta, length, theta, sin_theta, curvature_loss_exp,
     b2_value = []    
 
     for eccentricity in np.linspace(0, 0.999, 300):
+
         elliptic_integral = ellipe(eccentricity**2)
         a1, b1 = calculate_a_b(length, elliptic_integral, eccentricity)
 
         a2 = ((2 * b1) + delta) / 2
         two_a2 = 2 * a2
-        
-        # Choosing range for two_a2
-        # if (two_a2 < 0.022 or two_a2 > 0.024):
-        #     continue
+        #Choosing range for two_a2
+        if (two_a2 < min_2a or two_a2 > max_2a):
+            continue
 
         # Finding the eccentricity of the second ellipse 
         function_Ee = length / (4 * a2)
@@ -250,8 +243,6 @@ def compute_combined_metric(delta, length, theta, sin_theta, curvature_loss_exp,
     two_a_value = np.array(two_a_value)
 
     if len(two_a_value) < 10 or len(totalLoss_sum) < 10:
-        print("Fail")
-        print("delta: ", delta)
         return float('inf')
 
     mse, slope_difference, _, _ = fit_and_evaluate_losses(
@@ -263,7 +254,8 @@ def compute_combined_metric(delta, length, theta, sin_theta, curvature_loss_exp,
     print("delta: ", delta)
 
     result = mse * weight + slope_difference
-    print (result)
+    print ("result: ", result)
+    print( " ")
 
     return result
 
@@ -271,77 +263,71 @@ def compute_combined_metric(delta, length, theta, sin_theta, curvature_loss_exp,
 
 
 
-
-
-
-def optimize_delta_gd(initial_delta, learning_rate, num_iterations, epsilon,
-                     length, theta, sin_theta, curvature_loss_exp, TNB_Flat,
-                     error_function, desired_slope):
+def optimize_gd(initial_delta, learning_rate, num_iterations, epsilon,
+                theta, sin_theta, curvature_loss_exp, TNB_Flat,
+                error_function, desired_slope):
     
-    """
-    Gradient descent optimization for delta parameter
-    
-    Optimization Strategy:
-    1. Uses finite difference gradient estimation
-    2. Maintains delta within physical bounds [min_delta, max_delta]
-    3. Tracks best performing delta through iterations
-    4. Final evaluation with best delta
-    
-    Parameters:
-    learning_rate : float - Step size for gradient updates
-    epsilon : float - Perturbation size for gradient calculation
-    num_iterations : int - Maximum optimization steps
-    """
-    
-    # Initialize delta with physical constraints
-    delta = np.clip(initial_delta, min_delta, max_delta)
-    best_delta = delta
-    best_metric = float('inf')
-    history = []
-    i = 0
-    for _ in range(num_iterations):
+    best_results = []
 
-        # Bounded parameter perturbations
-        delta_plus = delta + epsilon
-        delta_minus = delta - epsilon
-
-        # Calculate finite difference gradient
-        metric_plus = compute_combined_metric(
-            delta_plus, 
-            length, theta, sin_theta, curvature_loss_exp,
-            TNB_Flat, error_function, desired_slope
-        )
-        metric_minus = compute_combined_metric(
-            delta_minus,
-            length, theta, sin_theta, curvature_loss_exp,
-            TNB_Flat, error_function, desired_slope
-        )
-        print("oi")
-
-        # Handle numerical instability
-        if np.isinf(metric_plus) or np.isinf(metric_minus):
-            #print(i)
-            i = i + 1
-            continue
-
-        # Central difference gradient estimation
-        gradient = (metric_plus - metric_minus) / (2 * epsilon)
-        # Update delta with gradient descent
-        delta = np.clip(delta - learning_rate * gradient, min_delta, max_delta)
-        print("novo delta: ", delta)
-        current_metric = compute_combined_metric(
-            delta,
-            length, theta, sin_theta, curvature_loss_exp,
-            TNB_Flat, error_function, desired_slope
-        )
+    for initial_radius in initial_radius_values:
+        # Initialize delta with physical constraints
+        length = 2 * np.pi * initial_radius
+        delta = np.clip(initial_delta, min_delta, max_delta)
+        best_delta = delta
+        best_metric = float('inf')
+        history = []
         
-        if current_metric < best_metric:
-            best_metric = current_metric
-            best_delta = delta
-            print("Best delta: ", best_delta)
-        
-        history.append(current_metric)
+        for _ in range(num_iterations):
 
+            # Bounded parameter perturbations
+            delta_plus = delta + epsilon
+            delta_minus = delta - epsilon
+
+            # Calculate finite difference gradient
+            metric_plus = compute_combined_metric(
+                delta_plus, 
+                length, theta, sin_theta, curvature_loss_exp,
+                TNB_Flat, error_function, desired_slope
+            )
+            metric_minus = compute_combined_metric(
+                delta_minus,
+                length, theta, sin_theta, curvature_loss_exp,
+                TNB_Flat, error_function, desired_slope
+            )
+
+            # Handle numerical instability
+            if np.isinf(metric_plus) or np.isinf(metric_minus):
+                continue
+
+            # Central difference gradient estimation
+            gradient = (metric_plus - metric_minus) / (2 * epsilon)
+            # Update delta with gradient descent
+            delta = np.clip(delta - learning_rate * gradient, min_delta, max_delta)
+            current_metric = compute_combined_metric(
+                delta,
+                length, theta, sin_theta, curvature_loss_exp,
+                TNB_Flat, error_function, desired_slope
+            )
+            
+            if current_metric < best_metric:
+                best_metric = current_metric
+                best_delta = delta
+            
+            history.append(current_metric)
+
+        best_results.append({
+            'initial_radius': initial_radius,
+            'best_delta': best_delta,
+            'best_metric': best_metric,
+            'length': length
+        })
+    
+    # Find the combination with the best metric
+    best_combination = min(best_results, key=lambda x: x['best_metric'])
+    best_initial_radius = best_combination['initial_radius']
+    best_delta = best_combination['best_delta']
+    best_length = best_combination['length']
+    
     # Final evaluation with final delta
     final_totalLoss1 = []
     final_totalLoss2 = []
@@ -356,13 +342,12 @@ def optimize_delta_gd(initial_delta, learning_rate, num_iterations, epsilon,
 
     for eccentricity in np.linspace(0, 0.95, 300):
         elliptic_integral = ellipe(eccentricity**2)
-        a1, b1 = calculate_a_b(length, elliptic_integral, eccentricity)
+        a1, b1 = calculate_a_b(best_length, elliptic_integral, eccentricity)
         a2 = ((2 * b1) + best_delta) / 2
         two_a2 = 2 * a2
 
-        # if (two_a2 < 0.022 or two_a2 > 0.024):
-        #     # print("Fail")
-        #     continue
+        if (two_a2 < min_2a or two_a2 > max_2a):
+            continue
 
         function_Ee = length / (4 * a2)
         if (function_Ee < 1 or function_Ee > np.pi / 2):
@@ -401,23 +386,29 @@ def optimize_delta_gd(initial_delta, learning_rate, num_iterations, epsilon,
         )
         
 
-    return (best_delta, final_two_a_value, final_totalLoss_sum, 
+    return (best_delta, best_initial_radius, final_two_a_value, final_totalLoss_sum, 
             final_slope, final_intercept, final_a1_value, final_b1_value,
-            final_a2_value, final_b2_value, final_e2_value)
+            final_a2_value, final_b2_value, final_e2_value, final_mse, final_slope_diff)
 #==========================================================================
 #
 #                       Calculating the two ellipses
 
-best_delta, final_two_a_value, final_totalLoss_sum, final_slope, final_intercept, a1, b1, a2, b2, e2 = optimize_delta_gd (initial_delta, learning_rate, num_iterations, epsilon, length, theta, sin_theta, curvature_loss_exp, TNB_Flat, error_function, desired_slope)
+best_delta, best_initial_radius, final_two_a_value, final_totalLoss_sum, final_slope, final_intercept, a1, b1, a2, b2, e2, final_mse, final_slope_diff = optimize_gd (initial_delta, 
+    learning_rate, num_iterations, epsilon, theta, sin_theta, curvature_loss_exp, TNB_Flat, error_function, desired_slope)
 # #==========================================================================
 # #
 # #                               Results
 
 # The best delta
-print(f"The best delta is {best_delta}")
+print(" ")
+print(f"The best delta is ", best_delta)
+print("The best initial radius is ", best_initial_radius)
+print("final mse: ", final_mse)
+print("final slope: ", final_slope)
+
 
 # Applying the metric
-print(len(final_two_a_value), len(final_totalLoss_sum))
+#print(len(final_two_a_value), len(final_totalLoss_sum))
 r2 = calculate_r2(final_two_a_value, final_totalLoss_sum)
 print(f"R²: {r2}")
 
@@ -449,28 +440,18 @@ ax1.grid(True)
 plt.tight_layout()
 ax1.tick_params(axis='both', 
                 which='major')
+
+#Plot lines
+y_desired = desired_slope * final_two_a_value + final_intercept
+y_calculated = final_slope * final_two_a_value + 2
+fig2, ax2 = plt.subplots(figsize = (13,8))
+ax2.plot(final_two_a_value, y_desired, color = "red", label = "desired")
+ax2.plot(final_two_a_value, y_calculated, color = "blue", label = "calculated")
+ax2.set_title('Fitted lines')
+ax2.set_xlabel('2a [m]')
+ax2.set_ylabel('Sum Loss [dB]')
 plt.legend()
+plt.grid(True, linestyle="--", alpha=0.6)
+
+
 plt.show()
-
-
-"""o limite do delta sempre vai ser o melhor delta. por que?
-quanto mais voce aumenta o limite do delta, menos amostras vc tera. quanto menos amostras, mais perto de uma reta vai estar...
-por exemplo, se tiver apenas duas amostras, a distancia entre elas vai ser sempre uma reta, enão vai continuar sendo assim ate que a elipse pare de existir.
-como resolver? talvez colocando um limite minimo de amostras permitidos para analisar quão bem se encaixa numa reta"""
-
-"""e se eu pegasse o que tem mais samples e r2??? 
-ex: The best delta is 0.015
-280 280
-R²: 0.6081005728350152
-The best delta is 0.017
-226 226
-R²: 0.5664841764413471
-
-por que eles escolheria o 0.017 ao inves do 15 se o 15, com mais amostras, se mostrou um fit melhor???
-"""
-
-"""uma vez retornando infinito, acabou. o delta nunca vai conseguir ser atualizado, pq vai sempre ficar voltando pro mesmo, por isso so
-roda as duas primeiras vezes
-
-sera que teria um jeito de implementar esse tipo de algoritmo, ja que, variando um dado, as vezes a informação referente a ele
-simplesmente n existe? ele precisa da informação anterior pra andar e, se ela nao existe, como faz??"""
