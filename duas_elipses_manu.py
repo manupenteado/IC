@@ -13,8 +13,7 @@ from sklearn.metrics import r2_score
 
 #                Defining constants and parameters
 
-initial_radius_values = np.linspace ((20/2) * 1e-03 - 1e-03, (20/2) * 1e-03 + 1e-03, 10)
-#initial_radius1 = (20/2) * 1e-03
+initial_radius_values = np.linspace ((20/2) * 1e-03 - 1e-03, (20/2) * 1e-03 + 1e-03, 20)
 theta = np.linspace(0, np.pi/2, 1000)
 sin_theta = np.sin(theta)
 desired_slope = -300
@@ -165,7 +164,6 @@ def fit_and_evaluate_losses(two_a_value, totalLoss_sum, desired_slope):
     model = LinearRegression()
     model.fit(x, y)
     calculated_slope = model.coef_[0]
-    print(calculated_slope)
     calculated_intercept = model.intercept_
     slope_difference = abs(calculated_slope - desired_slope)
 
@@ -211,7 +209,7 @@ def compute_combined_metric(delta, length, theta, sin_theta, curvature_loss_exp,
         function_Ee = length / (4 * a2)
         
         if (function_Ee < 1 or function_Ee > np.pi / 2):
-            break
+            continue
 
         e2 = calculate_eccentricity(error_function, function_Ee)
 
@@ -308,7 +306,7 @@ def optimize_gd(initial_delta, learning_rate, num_iterations, epsilon,
                 length, theta, sin_theta, curvature_loss_exp,
                 TNB_Flat, error_function, desired_slope
             )
-            
+
             if current_metric < best_metric:
                 best_metric = current_metric
                 best_delta = delta
@@ -322,7 +320,6 @@ def optimize_gd(initial_delta, learning_rate, num_iterations, epsilon,
             'length': length
         })
     
-    # Find the combination with the best metric
     best_combination = min(best_results, key=lambda x: x['best_metric'])
     best_initial_radius = best_combination['initial_radius']
     best_delta = best_combination['best_delta']
@@ -349,7 +346,7 @@ def optimize_gd(initial_delta, learning_rate, num_iterations, epsilon,
         if (two_a2 < min_2a or two_a2 > max_2a):
             continue
 
-        function_Ee = length / (4 * a2)
+        function_Ee = best_length / (4 * a2)
         if (function_Ee < 1 or function_Ee > np.pi / 2):
             continue
 
@@ -385,15 +382,15 @@ def optimize_gd(initial_delta, learning_rate, num_iterations, epsilon,
             final_two_a_value, final_totalLoss_sum, desired_slope
         )
         
-
+    final_result = final_mse * weight + final_slope_diff
     return (best_delta, best_initial_radius, final_two_a_value, final_totalLoss_sum, 
             final_slope, final_intercept, final_a1_value, final_b1_value,
-            final_a2_value, final_b2_value, final_e2_value, final_mse, final_slope_diff)
+            final_a2_value, final_b2_value, final_e2_value, final_mse, final_slope_diff, final_result)
 #==========================================================================
 #
 #                       Calculating the two ellipses
 
-best_delta, best_initial_radius, final_two_a_value, final_totalLoss_sum, final_slope, final_intercept, a1, b1, a2, b2, e2, final_mse, final_slope_diff = optimize_gd (initial_delta, 
+best_delta, best_initial_radius, final_two_a_value, final_totalLoss_sum, final_slope, final_intercept, a1, b1, a2, b2, e2, final_mse, final_slope_diff, final_result = optimize_gd (initial_delta, 
     learning_rate, num_iterations, epsilon, theta, sin_theta, curvature_loss_exp, TNB_Flat, error_function, desired_slope)
 # #==========================================================================
 # #
@@ -405,7 +402,7 @@ print(f"The best delta is ", best_delta)
 print("The best initial radius is ", best_initial_radius)
 print("final mse: ", final_mse)
 print("final slope: ", final_slope)
-
+print("final result: ", final_result)
 
 # Applying the metric
 #print(len(final_two_a_value), len(final_totalLoss_sum))
@@ -443,7 +440,7 @@ ax1.tick_params(axis='both',
 
 #Plot lines
 y_desired = desired_slope * final_two_a_value + final_intercept
-y_calculated = final_slope * final_two_a_value + 2
+y_calculated = final_slope * final_two_a_value + final_intercept
 fig2, ax2 = plt.subplots(figsize = (13,8))
 ax2.plot(final_two_a_value, y_desired, color = "red", label = "desired")
 ax2.plot(final_two_a_value, y_calculated, color = "blue", label = "calculated")
