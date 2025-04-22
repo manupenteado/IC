@@ -6,7 +6,7 @@ from scipy.special import ellipe
 from scipy.optimize import root_scalar
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
-from scipy.optimize import minimize
+from scipy.optimize import approx_fprime
 
 
 
@@ -14,20 +14,24 @@ from scipy.optimize import minimize
 
 #                Defining constants and parameters
 
-initial_radius_values = np.linspace ((20/2) * 1e-03 - 1e-03, (20/2) * 1e-03 + 1e-03, 10)
+initial_radius = ((20/2) * 1e-03 + 1e-03/2)
 theta = np.linspace(0, np.pi/2, 1000)
 sin_theta = np.sin(theta)
-desired_slope = -300
+desired_slope = 700
 slopes = []
 weight = 10
 initial_delta = 0.008
-learning_rate = 0.000000001 / 1.2       
+#learning_rate = 0.000000001 / 1.2  
+learning_rate = 1e-12
 epsilon = 0.00001              
 num_iterations = 40
 min_delta = 0.002           
 max_delta = 0.02
 min_2a = 0.02
-max_2a = 0.023  
+max_2a = 0.04
+min_radius = (20/2) * 1e-03 #+ 5e-03         
+max_radius = (20/2) * 1e-03 + 5e-03
+
 
 #==========================================================================
 
@@ -184,7 +188,9 @@ def calculate_r2(x, y):
 #==========================================================================
 
 #                          Main Functions
-def compute_combined_metric(delta, length, theta, sin_theta, curvature_loss_exp, 
+
+
+def objetivo(variables, theta, sin_theta, curvature_loss_exp, 
                            TNB_Flat, error_function, desired_slope):
     totalLoss1 = []
     totalLoss2 = []
@@ -193,7 +199,12 @@ def compute_combined_metric(delta, length, theta, sin_theta, curvature_loss_exp,
     a2_value = []
     e2_value = []
     b1_value = []
-    b2_value = []    
+    b2_value = []
+
+    delta = variables[0]
+    initial_radius = variables[1]
+    length = 2 * np.pi * initial_radius
+
 
     for eccentricity in np.linspace(0, 0.999, 300):
 
@@ -242,20 +253,18 @@ def compute_combined_metric(delta, length, theta, sin_theta, curvature_loss_exp,
     two_a_value = np.array(two_a_value)
 
     if len(two_a_value) < 10 or len(totalLoss_sum) < 10:
-        print("oi")
-        return float('inf')
+        return 999999
 
     mse, slope_difference, _, _ = fit_and_evaluate_losses(
         two_a_value, totalLoss_sum, desired_slope
     )
 
-    print("mse: ",mse)
-    print("slope_dif: ", slope_difference)
-    print("delta: ", delta)
-
     result = mse * weight + slope_difference
-    print ("result: ", result)
-    print( " ")
+    # print("mse: ",mse)
+    # print("slope_dif: ", slope_difference)
+    # print("delta: ", delta)
+    # print ("result: ", result)
+    # print( " ")
 
     return result
 
@@ -265,69 +274,60 @@ def compute_combined_metric(delta, length, theta, sin_theta, curvature_loss_exp,
 
 def optimize_gd(initial_delta, learning_rate, num_iterations, epsilon,
                 theta, sin_theta, curvature_loss_exp, TNB_Flat,
-                error_function, desired_slope):
+                error_function, desired_slope, initial_radius):
     
     best_results = []
 
-    for initial_radius in initial_radius_values:
-        # Initialize delta with physical constraints
-        length = 2 * np.pi * initial_radius
-        delta = np.clip(initial_delta, min_delta, max_delta)
-        best_delta = delta
-        best_metric = float('inf')
-        history = []
+    # Initialize delta and initial_radius with physical constraints
+    delta = np.clip(initial_delta, min_delta, max_delta)
+    initial_radius = np.clip(initial_radius, min_radius, max_radius)
+
+    best_delta = delta
+    best_initial_radius = initial_radius
+    best_metric = float('inf')
+    history = []
+    variables = np.array([initial_delta, initial_radius])
+
+
+    for _ in range(num_iterations):
+
+        gradient = approx_fprime(variables,
+                                objetivo,
+                                epsilon, theta, sin_theta, curvature_loss_exp, 
+                        TNB_Flat, error_function, desired_slope)
         
-        for _ in range(num_iterations):
+        print(gradient)
+        delta = np.clip(delta - learning_rate * gradient[0], min_delta, max_delta)
+        initial_radius = np.clip(initial_radius - learning_rate * gradient[1], min_radius, max_radius)
+        variables = np.array([delta, initial_radius])
 
-            # Bounded parameter perturbations
-            delta_plus = delta + epsilon
-            delta_minus = delta - epsilon
 
-            # Calculate finite difference gradient
-            metric_plus = compute_combined_metric(
-                delta_plus, 
-                length, theta, sin_theta, curvature_loss_exp,
-                TNB_Flat, error_function, desired_slope
-            )
-            metric_minus = compute_combined_metric(
-                delta_minus,
-                length, theta, sin_theta, curvature_loss_exp,
-                TNB_Flat, error_function, desired_slope
-            )
+        # Update delta with gradient descent
+        current_metric = approx_fprime(variables,
+                                objetivo,
+                                epsilon, theta, sin_theta, curvature_loss_exp, 
+                        TNB_Flat, error_function, desired_slope)
+        
+        current_metric_average = (current_metric[0] + current_metric[1])/2
 
-            # Handle numerical instability
-            if np.isinf(metric_plus) or np.isinf(metric_minus):
-                continue
+        if current_metric_average < best_metric:
+            best_metric = current_metric_average
+            best_initial_radius = initial_radius
+            best_delta = delta
+        
+        history.append(current_metric)
 
-            # Central difference gradient estimation
-            gradient = (metric_plus - metric_minus) / (2 * epsilon)
-            # Update delta with gradient descent
-            delta = np.clip(delta - learning_rate * gradient, min_delta, max_delta)
-            current_metric = compute_combined_metric(
-                delta,
-                length, theta, sin_theta, curvature_loss_exp,
-                TNB_Flat, error_function, desired_slope
-            )
-
-            if current_metric < best_metric:
-                best_metric = current_metric
-                best_delta = delta
-            
-            history.append(current_metric)
-
-        best_results.append({
-            'initial_radius': initial_radius,
-            'best_delta': best_delta,
-            'best_metric': best_metric,
-            'length': length
-        })
+    best_results.append({
+        'initial_radius': initial_radius,
+        'best_delta': best_delta,
+        'best_metric': best_metric,
+    })
     
     best_combination = min(best_results, key=lambda x: x['best_metric'])
     best_initial_radius = best_combination['initial_radius']
     best_delta = best_combination['best_delta']
-    best_length = best_combination['length']
     
-    # Final evaluation with final delta
+    # Final evaluation with final delta and final initial radius
     final_totalLoss1 = []
     final_totalLoss2 = []
     final_two_a_value = []
@@ -338,6 +338,8 @@ def optimize_gd(initial_delta, learning_rate, num_iterations, epsilon,
     final_b2_value = []
     final_slope = None
     final_intercept = None
+
+    best_length = 2 * np.pi * best_initial_radius
 
     for eccentricity in np.linspace(0, 0.95, 300):
         elliptic_integral = ellipe(eccentricity**2)
@@ -388,12 +390,13 @@ def optimize_gd(initial_delta, learning_rate, num_iterations, epsilon,
     return (best_delta, best_initial_radius, final_two_a_value, final_totalLoss_sum, 
             final_slope, final_intercept, final_a1_value, final_b1_value,
             final_a2_value, final_b2_value, final_e2_value, final_mse, final_slope_diff, final_result)
+
 #==========================================================================
 #
 #                       Calculating the two ellipses
 
 best_delta, best_initial_radius, final_two_a_value, final_totalLoss_sum, final_slope, final_intercept, a1, b1, a2, b2, e2, final_mse, final_slope_diff, final_result = optimize_gd (initial_delta, 
-    learning_rate, num_iterations, epsilon, theta, sin_theta, curvature_loss_exp, TNB_Flat, error_function, desired_slope)
+    learning_rate, num_iterations, epsilon, theta, sin_theta, curvature_loss_exp, TNB_Flat, error_function, desired_slope, initial_radius)
 # #==========================================================================
 # #
 # #                               Results
@@ -440,6 +443,7 @@ plt.grid(True, linestyle="--", alpha=0.6)
 #Plot lines
 y_desired = desired_slope * final_two_a_value + final_intercept
 y_calculated = final_slope * final_two_a_value + final_intercept
+
 
 fig2, ax2 = plt.subplots(figsize = (13,8))
 ax2.plot(final_two_a_value, y_desired, color = "red", label = "desired")
