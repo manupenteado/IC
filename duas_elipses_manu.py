@@ -6,6 +6,7 @@ from scipy.special import ellipe
 from scipy.optimize import root_scalar
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
+from scipy.optimize import minimize
 
 
 
@@ -13,7 +14,7 @@ from sklearn.metrics import r2_score
 
 #                Defining constants and parameters
 
-initial_radius_values = np.linspace ((20/2) * 1e-03 - 1e-03, (20/2) * 1e-03 + 1e-03, 20)
+initial_radius_values = np.linspace ((20/2) * 1e-03 - 1e-03, (20/2) * 1e-03 + 1e-03, 10)
 theta = np.linspace(0, np.pi/2, 1000)
 sin_theta = np.sin(theta)
 desired_slope = -300
@@ -22,7 +23,7 @@ weight = 10
 initial_delta = 0.008
 learning_rate = 0.000000001 / 1.2       
 epsilon = 0.00001              
-num_iterations = 50  
+num_iterations = 40
 min_delta = 0.002           
 max_delta = 0.02
 min_2a = 0.02
@@ -241,6 +242,7 @@ def compute_combined_metric(delta, length, theta, sin_theta, curvature_loss_exp,
     two_a_value = np.array(two_a_value)
 
     if len(two_a_value) < 10 or len(totalLoss_sum) < 10:
+        print("oi")
         return float('inf')
 
     mse, slope_difference, _, _ = fit_and_evaluate_losses(
@@ -405,22 +407,20 @@ print("final slope: ", final_slope)
 print("final result: ", final_result)
 
 # Applying the metric
-#print(len(final_two_a_value), len(final_totalLoss_sum))
+print(len(final_two_a_value), len(final_totalLoss_sum))
 r2 = calculate_r2(final_two_a_value, final_totalLoss_sum)
 print(f"R²: {r2}")
 
 # Plot a1, a2, b1, b2 and e2
-plt.figure(figsize=(10, 6))
-plt.plot(e2, a1, label="a1", marker="o")
-plt.plot(e2, a2, label="a2", marker="s")
-plt.plot(e2, b1, label="b1", marker="^")
-plt.plot(e2, b2, label="b2", marker="d")
-plt.xlabel("Eccentricity of the second ellipse")
-plt.ylabel("Values of a and b")
-plt.title("Behavior of a and b")
-plt.legend()
+fig0, ax0 = plt.subplots(figsize=(13, 8))
+ax0.plot(e2, a1, label="a1", marker="o")
+ax0.plot(e2, a2, label="a2", marker="s")
+ax0.plot(e2, b1, label="b1", marker="^")
+ax0.plot(e2, b2, label="b2", marker="d")
+ax0.set_xlabel("Eccentricity of the second ellipse")
+ax0.set_ylabel("Values of a and b")
+ax0.set_title("Behavior of a and b")
 plt.grid(True, linestyle="--", alpha=0.6)
-plt.tight_layout()
 
 # Plot 2a vs sum of total losses
 fig1, ax1 = plt.subplots(figsize=(13, 8))
@@ -433,22 +433,22 @@ ax1.plot(
 ax1.set_title('Sum of Curvature Losses vs 2a (Optimized)')
 ax1.set_xlabel('2a [m]')
 ax1.set_ylabel('Sum Loss [dB]')
-ax1.grid(True)
-plt.tight_layout()
 ax1.tick_params(axis='both', 
                 which='major')
+plt.grid(True, linestyle="--", alpha=0.6)
 
 #Plot lines
 y_desired = desired_slope * final_two_a_value + final_intercept
 y_calculated = final_slope * final_two_a_value + final_intercept
+
 fig2, ax2 = plt.subplots(figsize = (13,8))
 ax2.plot(final_two_a_value, y_desired, color = "red", label = "desired")
 ax2.plot(final_two_a_value, y_calculated, color = "blue", label = "calculated")
 ax2.set_title('Fitted lines')
 ax2.set_xlabel('2a [m]')
 ax2.set_ylabel('Sum Loss [dB]')
+
 plt.legend()
 plt.grid(True, linestyle="--", alpha=0.6)
-
-
+plt.tight_layout()
 plt.show()
