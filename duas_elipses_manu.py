@@ -7,6 +7,8 @@ from scipy.optimize import root_scalar
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 from scipy.optimize import approx_fprime
+from scipy.optimize import minimize
+
 
 
 
@@ -17,11 +19,10 @@ from scipy.optimize import approx_fprime
 initial_radius = ((20/2) * 1e-03 + 1e-03/2)
 theta = np.linspace(0, np.pi/2, 1000)
 sin_theta = np.sin(theta)
-desired_slope = 700
+desired_slope = 650
 slopes = []
 weight = 10
 initial_delta = 0.008
-#learning_rate = 0.000000001 / 1.2  
 learning_rate = 1e-12
 epsilon = 0.00001              
 num_iterations = 40
@@ -34,8 +35,7 @@ max_radius = (20/2) * 1e-03 + 5e-03
 
 
 #==========================================================================
-
-#                          Helper Functions
+#                          Helper functions
 
 def TNB_Flat(x, y, t):
     # dr is the differential of the curve
@@ -115,11 +115,9 @@ def curvature_loss_exp(x):
  
     return a1 * np.exp(b1 * x) + a2 * np.exp(-((x - mu) ** 2) / (2 * sigma ** 2))
 
-# Function to compute the elliptic integral
 def calculate_elliptic_integral(eccentricity, sin_theta, theta):
     return trapz(np.sqrt(1 - eccentricity**2 * sin_theta**2), theta)
 
-# Calculating a and b of an ellipse
 def calculate_a_b(length, elliptic_integral, eccentricity):
     b = (1 / 4) * length * np.sqrt(1 - eccentricity**2) / elliptic_integral
     a = b / np.sqrt(1 - eccentricity**2)
@@ -151,14 +149,12 @@ def calculate_curvature_and_loss(x, y, TNB_Flat, curvature_loss_exp):
     total_loss = trapz(curvature_loss, s)
     return kappa_TNB, total_loss, s
 
-# Used to calculate the Mean Squared Error between the y value (sum of losses) and a straight line
 def mse_loss(x, y):
     model = LinearRegression()
     model.fit(x.reshape(-1, 1), y)  
     y_pred = model.predict(x.reshape(-1, 1))  
     mse = np.mean((y - y_pred) ** 2)  
     return mse
-
 
 def fit_and_evaluate_losses(two_a_value, totalLoss_sum, desired_slope):
     
@@ -174,8 +170,6 @@ def fit_and_evaluate_losses(two_a_value, totalLoss_sum, desired_slope):
 
     return mse, slope_difference, calculated_slope, calculated_intercept
     
-
-# Linearity metric: R-squared (R²) / Coefficient of Determination
 def calculate_r2(x, y):
     model = LinearRegression()
     model.fit(x.reshape(-1, 1), y)
@@ -275,58 +269,33 @@ def objetivo(variables, theta, sin_theta, curvature_loss_exp,
 def optimize_gd(initial_delta, learning_rate, num_iterations, epsilon,
                 theta, sin_theta, curvature_loss_exp, TNB_Flat,
                 error_function, desired_slope, initial_radius):
-    
     best_results = []
 
+    
     # Initialize delta and initial_radius with physical constraints
     delta = np.clip(initial_delta, min_delta, max_delta)
     initial_radius = np.clip(initial_radius, min_radius, max_radius)
 
     best_delta = delta
     best_initial_radius = initial_radius
-    best_metric = float('inf')
-    history = []
-    variables = np.array([initial_delta, initial_radius])
+    variables = np.array([delta, initial_radius])
 
-
-    for _ in range(num_iterations):
-
-        gradient = approx_fprime(variables,
-                                objetivo,
-                                epsilon, theta, sin_theta, curvature_loss_exp, 
-                        TNB_Flat, error_function, desired_slope)
-        
-        print(gradient)
-        delta = np.clip(delta - learning_rate * gradient[0], min_delta, max_delta)
-        initial_radius = np.clip(initial_radius - learning_rate * gradient[1], min_radius, max_radius)
-        variables = np.array([delta, initial_radius])
-
-
-        # Update delta with gradient descent
-        current_metric = approx_fprime(variables,
-                                objetivo,
-                                epsilon, theta, sin_theta, curvature_loss_exp, 
-                        TNB_Flat, error_function, desired_slope)
-        
-        current_metric_average = (current_metric[0] + current_metric[1])/2
-
-        if current_metric_average < best_metric:
-            best_metric = current_metric_average
-            best_initial_radius = initial_radius
-            best_delta = delta
-        
-        history.append(current_metric)
-
-    best_results.append({
-        'initial_radius': initial_radius,
-        'best_delta': best_delta,
-        'best_metric': best_metric,
-    })
+    # Define bounds for the variables
+    bounds = [(min_delta, max_delta), (min_radius, max_radius)]
     
-    best_combination = min(best_results, key=lambda x: x['best_metric'])
-    best_initial_radius = best_combination['initial_radius']
-    best_delta = best_combination['best_delta']
-    
+    res = minimize(objetivo, 
+                variables, 
+                args=(theta, sin_theta, curvature_loss_exp, TNB_Flat, error_function, desired_slope), 
+                method='L-BFGS-B',
+                bounds=bounds,
+                options={'eps': epsilon})  
+
+    # Update the variables with optimization results
+    best_delta = res.x[0]
+    best_initial_radius = res.x[1]
+    current_metric = res.fun
+
+
     # Final evaluation with final delta and final initial radius
     final_totalLoss1 = []
     final_totalLoss2 = []
