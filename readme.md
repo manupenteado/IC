@@ -2,7 +2,7 @@
 
 ---
 
-## 📄 Descrição em Português
+## 📄 Descrição em Português:
 
 Este projeto faz parte da minha **Iniciação Científica** e tem como objetivo o desenvolvimento de um **sensor linear baseado em fibra óptica para detecção de perda por macrobending**.  
 
@@ -12,7 +12,7 @@ Além disso,  **testes experimentais** estão sendo planejados para aprimorament
 
 ---
 
-## 🌎 Description in English
+## 🌎 Description in English:
 
 This project is part of my **Scientific Research Program** and aims to develop a **linear fiber optic sensor for macrobending loss detection**.  
 
