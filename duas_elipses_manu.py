@@ -15,14 +15,16 @@ from scipy.optimize import minimize
 
 #                Defining constants and parameters
 
-initial_radius1 = 14e-03
-initial_radius2 = 14e-03
+initial_radius1 = 10e-03
+initial_radius2 = 10e-03
+initial_eccentricity1 = 0.5
+initial_eccentricity2 = 0.9
 theta = np.linspace(0, np.pi/2, 1000)
 sin_theta = np.sin(theta)
 desired_slope = 500
 slopes = []
 weight = 1000
-initial_delta = 0.002
+initial_delta = 0.02
 learning_rate = 1e-10
 epsilon = 1e-12    
 num_iterations = 40
@@ -30,8 +32,10 @@ min_delta = 0.002
 max_delta = 0.02
 min_2a = 0.035
 max_2a = 0.038
-min_radius = 20 * 1e-03 - 10e-03         
-max_radius = 20 * 1e-03 + 20e-03
+min_radius = 10e-03         
+max_radius = 40e-03
+min_eccentricity = 0
+max_eccentricity = 0.99999
 min_lenght_value = 10
 
 
@@ -196,20 +200,28 @@ def objetivo(variables, theta, sin_theta, curvature_loss_exp,
     b1_value = []
     b2_value = []
 
-    delta = variables[0]
-    initial_radius1 = variables[1]
-    initial_radius2 = variables[2]
+  #  delta = variables[0]
+    initial_radius1 = variables[0]
+    initial_radius2 = variables[1]
+    initial_eccentricity1 = variables [2]
+    initial_eccentricity2 = variables[3] 
     length1 = 2 * np.pi * initial_radius1
     length2 =  2 * np.pi * initial_radius2 
 
-    # print(initial_radius1)
-    # print(initial_radius2)
-    # print(" ")
+    elliptic_integral1 = ellipe(initial_eccentricity1**2)
+    a1, b1 = calculate_a_b(length1, elliptic_integral1, initial_eccentricity1)
+    elliptic_integral2 = ellipe(initial_eccentricity2**2)
+    a2, b2 = calculate_a_b(length2, elliptic_integral2, initial_eccentricity2)
+    
+    delta = 2 * a2 - 2 * b1
+    # Check if delta is negative, if so, return a large value
+    if delta < 0:
+        return 999999
 
-    for eccentricity in np.linspace(0, 0.999, 300):
+    for eccentricity in np.linspace(initial_eccentricity1, 0.999, 300):
 
-        elliptic_integral = ellipe(eccentricity**2)
-        a1, b1 = calculate_a_b(length1, elliptic_integral, eccentricity)
+        elliptic_integral1 = ellipe(eccentricity**2)
+        a1, b1 = calculate_a_b(length1, elliptic_integral1, eccentricity)
 
         a2 = ((2 * b1) + delta) / 2
         two_a2 = 2 * a2
@@ -222,7 +234,7 @@ def objetivo(variables, theta, sin_theta, curvature_loss_exp,
         function_Ee = length2 / (4 * a2)
         
         if (function_Ee < 1 or function_Ee > np.pi / 2):
-            continue
+           continue
 
         e2 = calculate_eccentricity(error_function, function_Ee)
 
@@ -255,7 +267,7 @@ def objetivo(variables, theta, sin_theta, curvature_loss_exp,
 
     if len(two_a_value) < min_lenght_value or len(totalLoss_sum) < min_lenght_value:
         return 999999
-    
+
     mse, slope_difference, _, _ = fit_and_evaluate_losses(
         two_a_value, totalLoss_sum, desired_slope
     )
@@ -264,7 +276,7 @@ def objetivo(variables, theta, sin_theta, curvature_loss_exp,
     # print("mse: ",mse)
     # print("slope_dif: ", slope_difference)
     # print("delta: ", delta)
-    # print ("result: ", result)
+   # print ("result: ", result)
     # print( " ")
 
     return result
@@ -275,22 +287,19 @@ def objetivo(variables, theta, sin_theta, curvature_loss_exp,
 
 def optimize_gd(initial_delta, learning_rate, num_iterations, epsilon,
                 theta, sin_theta, curvature_loss_exp, TNB_Flat,
-                error_function, desired_slope, initial_radius1, initial_radius2):
+                error_function, desired_slope, initial_radius1, initial_radius2, initial_eccentricity1, initial_eccentricity2):
     
     # Initialize delta and initial_radius with physical constraints
-    delta = np.clip(initial_delta, min_delta, max_delta)
+   # delta = np.clip(initial_delta, min_delta, max_delta)
     initial_radius1 = np.clip(initial_radius1, min_radius, max_radius)
     initial_radius2 = np.clip(initial_radius2, min_radius, max_radius)
+    initial_eccentricity1 = np.clip(initial_eccentricity1, min_eccentricity, max_eccentricity)
+    initial_eccentricity2 = np.clip(initial_eccentricity2, min_eccentricity, max_eccentricity)
 
-
-    best_delta = delta
-    best_initial_radius1 = initial_radius1
-    best_initial_radius2 = initial_radius2
-
-    variables = np.array([delta, initial_radius1, initial_radius2])
+    variables = np.array([initial_radius1, initial_radius2, initial_eccentricity1, initial_eccentricity2])
 
     # Define bounds for the variables
-    bounds = [(min_delta, max_delta), (min_radius, max_radius), (min_radius, max_radius)]
+    bounds = [(min_radius, max_radius), (min_radius, max_radius), (min_eccentricity, max_eccentricity), (min_eccentricity, max_eccentricity)]
     
     res = minimize(objetivo, 
                 variables, 
@@ -300,9 +309,11 @@ def optimize_gd(initial_delta, learning_rate, num_iterations, epsilon,
                 options={'eps': epsilon})  
 
     # Update the variables with optimization results
-    best_delta = res.x[0]
-    best_initial_radius1 = res.x[1]
-    best_initial_radius2 = res.x[2]
+   # best_delta = res.x[0]
+    best_initial_radius1 = res.x[0]
+    best_initial_radius2 = res.x[1]
+    best_initial_eccentricity1 = res.x[2]
+    best_initial_eccentricity2 = res.x[3]
 
     # Final evaluation with final delta and final initial radius
     final_totalLoss1 = []
@@ -319,14 +330,21 @@ def optimize_gd(initial_delta, learning_rate, num_iterations, epsilon,
     best_length1 = 2 * np.pi * best_initial_radius1
     best_length2 = 2 * np.pi * best_initial_radius2
 
-    for eccentricity in np.linspace(0, 0.95, 300):
+    elliptic_integral1 = ellipe(best_initial_eccentricity1**2)
+    a1, b1 = calculate_a_b(best_length1, elliptic_integral1, best_initial_eccentricity1)
+    elliptic_integral2 = ellipe(initial_eccentricity2**2)
+    a2, b2 = calculate_a_b(best_length2, elliptic_integral2, best_initial_eccentricity2)
+    
+    delta = 2 * a2 - 2 * b1
+
+    for eccentricity in np.linspace(best_initial_eccentricity1, 0.95, 300):
         elliptic_integral = ellipe(eccentricity**2)
         a1, b1 = calculate_a_b(best_length1, elliptic_integral, eccentricity)
-        a2 = ((2 * b1) + best_delta) / 2
+        a2 = ((2 * b1) + delta) / 2
         two_a2 = 2 * a2
 
-        if (two_a2 < min_2a or two_a2 > max_2a):
-            continue
+        # if (two_a2 < min_2a or two_a2 > max_2a):
+        #     continue
 
         function_Ee = best_length2 / (4 * a2)
         if (function_Ee < 1 or function_Ee > np.pi / 2):
@@ -336,7 +354,6 @@ def optimize_gd(initial_delta, learning_rate, num_iterations, epsilon,
         e2 = calculate_eccentricity(error_function, function_Ee)
         b2 = a2 * (np.sqrt(1 - (e2 ** 2)))
 
-        # Generate ellipses and calculate curvature/loss
         t = np.linspace(0, 2 * np.pi, 500)
         x1, y1 = ellipse(a1, b1, t)
         x2, y2 = ellipse(a2, b2, t)
@@ -366,16 +383,16 @@ def optimize_gd(initial_delta, learning_rate, num_iterations, epsilon,
         )
         
     final_result = final_mse * weight + final_slope_diff
-    return (best_delta, best_initial_radius1, best_initial_radius2, final_two_a_value, final_totalLoss_sum, 
+    return (delta, best_initial_radius1, best_initial_radius2, final_two_a_value, final_totalLoss_sum, 
             final_slope, final_intercept, final_a1_value, final_b1_value,
-            final_a2_value, final_b2_value, final_e2_value, final_mse, final_slope_diff, final_result, final_totalLoss1, final_totalLoss2)
+            final_a2_value, final_b2_value, final_e2_value, final_mse, final_slope_diff, final_result, final_totalLoss1, final_totalLoss2, best_initial_eccentricity1, best_initial_eccentricity2)
 
 #==========================================================================
 #
 #                       Calculating the two ellipses
 
-best_delta, best_initial_radius1, best_initial_radius2, final_two_a_value, final_totalLoss_sum, final_slope, final_intercept, a1, b1, a2, b2, e2, final_mse, final_slope_diff, final_result, final_totalLoss1, final_totalLoss2 = optimize_gd (initial_delta, 
-    learning_rate, num_iterations, epsilon, theta, sin_theta, curvature_loss_exp, TNB_Flat, error_function, desired_slope, initial_radius1, initial_radius2)
+best_delta, best_initial_radius1, best_initial_radius2, final_two_a_value, final_totalLoss_sum, final_slope, final_intercept, a1, b1, a2, b2, e2, final_mse, final_slope_diff, final_result, final_totalLoss1, final_totalLoss2, best_initial_eccentricity1, best_initial_eccentricity2= optimize_gd (initial_delta, 
+    learning_rate, num_iterations, epsilon, theta, sin_theta, curvature_loss_exp, TNB_Flat, error_function, desired_slope, initial_radius1, initial_radius2, initial_eccentricity1, initial_eccentricity2)
 # #==========================================================================
 # #
 # #                               Results
@@ -385,6 +402,9 @@ print(" ")
 print(f"The best delta is ", best_delta)
 print("The best initial radius for the first ellipse is ", best_initial_radius1)
 print("The best initial radius for the second ellipse is ", best_initial_radius2)
+print("The best initial eccentricity1 is ", best_initial_eccentricity1)
+print("The best initial eccentricity2 is ", best_initial_eccentricity2)
+print(" ")
 print("final mse: ", final_mse)
 print("final slope: ", final_slope)
 print("final result: ", final_result)
@@ -403,7 +423,6 @@ ax0.plot(e2, b2, label="b2", marker="d")
 ax0.set_xlabel("Eccentricity of the second ellipse")
 ax0.set_ylabel("Values of a and b")
 ax0.set_title("Behavior of a and b")
-plt.grid(True, linestyle="--", alpha=0.6)
 ax0.legend()
 
 
@@ -420,32 +439,22 @@ ax1.set_xlabel('2a [m]')
 ax1.set_ylabel('Sum Loss [dB]')
 ax1.tick_params(axis='both', 
                 which='major')
-plt.grid(True, linestyle="--", alpha=0.6)
 
 ax1.plot(
     final_two_a_value, 
     final_totalLoss1, 
-    label=f'Curvature Loss 1 [dB] (optimized delta = {best_delta})', 
+    label=f'Curvature Loss 1', 
     color='red',
     linewidth=2)
-ax1.set_title('Curvature Loss 1 vs 2a (Optimized)')
-ax1.set_xlabel('2a [m]')
-ax1.set_ylabel('Loss [dB]')
-ax1.tick_params(axis='both', 
-                which='major')
 
 ax1.plot(
     final_two_a_value, 
     final_totalLoss2, 
-    label=f'Curvature Loss 2 [dB] (optimized delta = {best_delta})', 
+    label=f'Curvature Loss 2', 
     color='pink',
     linewidth=2)
-ax1.set_title('Curvature Loss 2 vs 2a (Optimized)')
-ax1.set_xlabel('2a [m]')
-ax1.set_ylabel('Loss [dB]')
-ax1.tick_params(axis='both', 
-                which='major')
-plt.grid(True, linestyle="--", alpha=0.6)
+ax1.legend()
+
 
 #Plot lines
 y_desired = desired_slope * final_two_a_value + final_intercept
@@ -465,12 +474,12 @@ plt.tight_layout()
 plt.show()
 
 
+
 """
-comecar a segunda ellipse ja apertada
+conferir 2a2 - 2b1 = delta -> se delta for menor que 0 descarta
+se nao, ele comprime
 
-talvez ao inves de mudar o delta, muda a excentricidade dos dois e apartir disso, calcula o delta
+definir e1 e e2 previamente, junto com os comprimentos
 
-otimiza a excentricidade inicial apenas
-
-antes -----> 
+adicionar -> 2a2 tem que ser maior que o raio 2 inicial
 """
